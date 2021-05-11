@@ -7,59 +7,44 @@ import java.util.TreeSet;
 
 public class WordNet
 {
-	private int n;
-	private ArrayList<ArrayList<String>> V;
-	private TreeSet<String> allNouns;
-	private Digraph DAG;
-	
+	private final int n;
+	private final ArrayList<ArrayList<String>> V;
+	private final TreeSet<String> allNouns;
+	private final Digraph DAG;
+	private final SAP shortestPath;
 	
 	// constructor takes the name of the two input files
 	public WordNet(String synsets, String hypernyms)
 	{
-		// ===================================================
-		// Implement throw exception when the input to the
-		// constructor does not correspond to a rooted DAG.
-		// (check for cycles and also for existence of a root)
-		// ===================================================
-		
 		if (synsets == null || hypernyms == null) throw new IllegalArgumentException();
-		
-		V = new ArrayList<ArrayList<String>>();
+		V = new ArrayList<>();
 		allNouns = new TreeSet<>();
-		
 		In in = new In(synsets);
 		
-		n = 0;
 		while (in.hasNextLine())
 		{
 			String line = in.readLine();
 			String[] data = line.split(",");
-			V.add(new ArrayList<String>());
-			
-			ArrayList<String> temp = new ArrayList<>(Arrays.asList(data[1].split(" ")));
-			
-			V.set(n, temp);
-			
-			for (String s : temp) allNouns.add(s);
-			
-			n++;
+			V.add(new ArrayList<>(Arrays.asList(data[1].split(" "))));
+			allNouns.addAll(V.get(V.size() - 1));
 		}
-		
+		n = V.size();
 		in.close();
-		
-		DAG = new Digraph(n);
+		this.DAG = new Digraph(n);
 		
 		in = new In(hypernyms);
-		
 		while (in.hasNextLine())
 		{
 			String line = in.readLine();
 			String[] data = line.split(",");
-			
 			for (int i = 1; i < data.length; i++)
 				DAG.addEdge(Integer.parseInt(data[0]), Integer.parseInt(data[i]));
 		}
+		
 		in.close();
+		if (hasCycle()) throw new IllegalArgumentException("Graph contains a cycle.");
+		if (!isRooted()) throw new IllegalArgumentException("Graph is not single-rooted");
+		this.shortestPath = new SAP(DAG);
 	}
 	
 	// returns all WordNet nouns
@@ -78,12 +63,9 @@ public class WordNet
 	// distance between nounA and nounB
 	public int distance(String nounA, String nounB)
 	{
-		// ===================================================
-		// Complexity aim: linear in size of digraph
-		// ===================================================
-		checkValidNoun(nounA, nounB);
-		
-		return 0;
+		Iterable<Integer> v = getIndices(nounA);
+		Iterable<Integer> w = getIndices(nounB);
+		return shortestPath.length(v, w);
 	}
 	
 	
@@ -91,22 +73,71 @@ public class WordNet
 	// shortest ancestral path (defined below)
 	public String sap(String nounA, String nounB)
 	{
-		// =========================================================================================
-		// Complexity aim: linear in size of digraph
-		// =========================================================================================
-		checkValidNoun(nounA, nounB);
+		Iterable<Integer> v = getIndices(nounA);
+		Iterable<Integer> w = getIndices(nounB);
 		
-		return "";
+		int x = shortestPath.ancestor(v, w);
+		StringBuilder s = new StringBuilder();
+		
+		for (String i : V.get(x))
+			s.append(i).append(" ");
+		
+		return s.substring(0, s.length() - 1);
 	}
 	
-	
-	private void checkValidNoun(String nounA, String nounB)
+	private Iterable<Integer> getIndices(String noun)
 	{
-		if (nounA == null || nounB == null) throw new IllegalArgumentException();
-		if (!allNouns.contains(nounA) || !allNouns.contains(nounB))
-		{ throw new IllegalArgumentException(); }
+		if (noun == null) throw new IllegalArgumentException();
+		
+		ArrayList<Integer> indices = new ArrayList<>();
+		for (int i = 0; i < n; i++)
+		{
+			for (String s : V.get(i))
+				if (s.equals(noun)) indices.add(i);
+		}
+		
+		if (indices.isEmpty()) throw new IllegalArgumentException();
+		return indices;
 	}
 	
+	
+	private boolean isRooted()
+	{
+		boolean rootFound = false;
+		for (int i = 0; i < n; i++)
+		{
+			if (DAG.outdegree(i) == 0)
+			{
+				if (rootFound) return false;
+				rootFound = true;
+			}
+		}
+		return rootFound;
+	}
+	
+	private boolean hasCycle()
+	{
+		boolean[] recStack = new boolean[n];
+		boolean[] visited = new boolean[n];
+		for (int i = 0; i < n; i++)
+			if (!visited[i] && hasCycle(recStack, visited, i)) return true;
+		
+		return false;
+	}
+	
+	private boolean hasCycle(boolean[] recStack, boolean[] visited, int v)
+	{
+		if (recStack[v] && visited[v]) return true;
+		if (visited[v]) return false;
+		recStack[v] = true;
+		visited[v] = true;
+		
+		for (int i : DAG.adj(v))
+			if (hasCycle(recStack, visited, i)) return true;
+		
+		recStack[v] = false;
+		return false;
+	}
 	
 	// do unit testing of this class
 	public static void main(String[] args)
